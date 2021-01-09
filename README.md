@@ -23,9 +23,15 @@ XRayNet(
   (dropout): Dropout(p=0.2, inplace=False)
 )
 
-For this model, I used CrossEntropyLoss and Adam Optimizer. The training and testing data from Kaggle each with 239 images for NORMAL and 390 images for PNEUMONIA. 
+For this model, I used CrossEntropyLoss and Adam Optimizer. The training data from Kaggle had  1340 images for NORMAL and 3876 images for PNEUMONIA. 
 
 Test Accuracy of     NORMAL: 62% (147/234)
 Test Accuracy of     PNEUMONIA: 97% (381/390)
 
 Test Accuracy (Overall): 84% (528/624)
+
+The Same model was trained again with a more balanced data i.e. 1340 images each under NORMAL and PNEUMONIA with below results:
+Test Accuracy of     NORMAL: 70% (165/234)
+Test Accuracy of     PNEUMONIA: 89% (209/234)
+
+Test Accuracy (Overall): 79% (374/468)
