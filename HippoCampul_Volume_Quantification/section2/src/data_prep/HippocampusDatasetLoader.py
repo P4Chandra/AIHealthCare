@@ -39,8 +39,8 @@ def LoadHippocampusData(root_dir, y_shape, z_shape):
         label, _ = load(os.path.join(label_dir, f))
 
         # TASK: normalize all images (but not labels) so that values are in [0..1] range
-        # <YOUR CODE GOES HERE>
-
+        # Normalization has been done along Sagittal plane
+        image=image.astype(np.single)/np.max(image)
         # We need to reshape data since CNN tensors that represent minibatches
         # in our case will be stacks of slices and stacks need to be of the same size.
         # In the inference pathway we will need to crop the output to that
@@ -49,14 +49,19 @@ def LoadHippocampusData(root_dir, y_shape, z_shape):
         # extend 2 dimensions out of 3. We choose to extend coronal and sagittal here
 
         # TASK: med_reshape function is not complete. Go and fix it!
-        image = med_reshape(image, new_shape=(image.shape[0], y_shape, z_shape))
-        label = med_reshape(label, new_shape=(label.shape[0], y_shape, z_shape)).astype(int)
+        try:
+            image = med_reshape(image, new_shape=(image.shape[0], y_shape, z_shape))
+            label = med_reshape(label, new_shape=(label.shape[0], y_shape, z_shape)).astype(int)
+        except :
+            print("Outlier detected : Discarding file name: "+str(f)+"due to shape:" +str(image.shape))
+            continue
 
         # TASK: Why do we need to cast label to int?
-        # ANSWER: 
+        # ANSWER: May be makes it easier to calculate performance ?
 
         out.append({"image": image, "seg": label, "filename": f})
 
     # Hippocampus dataset only takes about 300 Mb RAM, so we can afford to keep it all in RAM
+    # now if this is too huge we will need to design a caching system.
     print(f"Processed {len(out)} files, total {sum([x['image'].shape[0] for x in out])} slices")
     return np.array(out)

@@ -3,9 +3,11 @@ This file contains code that will kick off training and testing processes
 """
 import os
 import json
+import numpy as np
 
 from experiments.UNetExperiment import UNetExperiment
 from data_prep.HippocampusDatasetLoader import LoadHippocampusData
+from sklearn.model_selection import train_test_split
 
 class Config:
     """
@@ -33,7 +35,6 @@ if __name__ == "__main__":
     # TASK: LoadHippocampusData is not complete. Go to the implementation and complete it. 
     data = LoadHippocampusData(c.root_dir, y_shape = c.patch_size, z_shape = c.patch_size)
 
-
     # Create test-train-val split
     # In a real world scenario you would probably do multiple splits for 
     # multi-fold training to improve your model quality
@@ -49,7 +50,14 @@ if __name__ == "__main__":
     # the array with indices of training volumes to be used for training, validation 
     # and testing respectively.
     # <YOUR CODE GOES HERE>
-
+    #Split train and test-Val sets train contains 75% of data and test-val 25%
+    train,test_val=train_test_split(keys,test_size=0.25)
+    test,val=train_test_split(test_val,test_size=0.5)
+    split={"train":train,
+           "test":test,
+           "val":val
+    }
+    
     # Set up and run experiment
     
     # TASK: Class UNetExperiment has missing pieces. Go to the file and fill them in

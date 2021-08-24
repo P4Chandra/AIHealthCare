@@ -31,6 +31,7 @@ class SlicesDataset(Dataset):
             Dictionary of 2 Torch Tensors of dimensions [1, W, H]
         """
         slc = self.slices[idx]
+        #print("slc data = {} and data[{}] visualize={}".format(slc,slc[0],self.data[slc[0]]))
         sample = dict()
         sample["id"] = idx
         # You could implement caching strategy here if dataset is too large to fit
@@ -48,11 +49,8 @@ class SlicesDataset(Dataset):
         # Hint2: You can use None notation like so: arr[None, :] to add size-1 
         # dimension to a Numpy array
         # <YOUR CODE GOES HERE>
-        idx_data=self.data[idx]
-        print("SlicesDataset"+ str(idx_data))
-        image,label = (idx_data["image"],idx_data["seg"])
-        sample['image']=image[newaxis,:,:]
-        sample['label']=label[newaxis,:,:]
+        sample['image']=torch.from_numpy(self.data[slc[0]]['image'][slc[1]]).unsqueeze(0).cuda()
+        sample['seg']=torch.from_numpy(self.data[slc[0]]['seg'][slc[1]]).unsqueeze(0).long().cuda()
         return sample
 
     def __len__(self):

@@ -92,21 +92,25 @@ class UNetExperiment:
         # Loop over our minibatches
         for i, batch in enumerate(self.train_loader):
             self.optimizer.zero_grad()
-
+           # print("i= {} batch= {}".format(i,batch))
             # TASK: You have your data in batch variable. Put the slices as 4D Torch Tensors of 
             # shape [BATCH_SIZE, 1, PATCH_SIZE, PATCH_SIZE] into variables data and target. 
             # Feed data to the model and feed target to the loss function
-            # 
-            # data = <YOUR CODE HERE>
-            # target = <YOUR CODE HERE>
-
+            
+            # Input image need to be same type as weight (float). 
+            #if not type cast,Input image will be considered as double by default
+            data = batch['image'].float() 
+            data=data.to(device=self.device, dtype=torch.float)
+            target=batch['seg'].long()
+            #print(" Data shape "+str(data.shape))
+            #print(" target shape "+str(target.shape))
             prediction = self.model(data)
 
             # We are also getting softmax'd version of prediction to output a probability map
             # so that we can see how the model converges to the solution
             prediction_softmax = F.softmax(prediction, dim=1)
-
-            loss = self.loss_function(prediction, target[:, 0, :, :])
+            #print("prediction: "+str(prediction))
+            loss = self.loss_function(prediction, target[:,0,:,:])
 
             # TASK: What does each dimension of variable prediction represent?
             # ANSWER:
@@ -154,7 +158,12 @@ class UNetExperiment:
                 
                 # TASK: Write validation code that will compute loss on a validation sample
                 # <YOUR CODE HERE>
-
+                data=batch['image'].float()
+                prediction = self.model(data)
+                target=batch['seg']
+                prediction_softmax = F.softmax(prediction, dim=1)
+                #print("prediction for validation: "+str(prediction))
+                loss = self.loss_function(prediction, target[:, 0, :, :])
                 print(f"Batch {i}. Data shape {data.shape} Loss {loss}")
 
                 # We report loss that is accumulated across all of validation set
