@@ -1,7 +1,6 @@
 """
 Here we do inference on a DICOM volume, constructing the volume first, and then sending it to the
 clinical archive
-
 This code will do the following:
     1. Identify the series to run HippoCrop.AI algorithm on from a folder containing multiple studies
     2. Construct a NumPy volume from a set of DICOM files
@@ -19,28 +18,29 @@ import subprocess
 
 import numpy as np
 import pydicom
-import textwrap
-
+import PIL
 from PIL import Image
 from PIL import ImageFont
 from PIL import ImageDraw
 
 from inference.UNetInferenceAgent import UNetInferenceAgent
-from datetime import date
+
+from utils.utils import med_reshape
+
+date_and_time = datetime.datetime.now().strftime('%B %d, %Y. %H:%M:%S') 
 
 def load_dicom_volume_as_numpy_from_list(dcmlist):
     """Loads a list of PyDicom objects a Numpy array.
     Assumes that only one series is in the array
-
     Arguments:
         dcmlist {list of PyDicom objects} -- path to directory
-
     Returns:
         tuple of (3D volume, header of the 1st image)
     """
-
+    
     # In the real world you would do a lot of validation here
     slices = [np.flip(dcm.pixel_array).T for dcm in sorted(dcmlist, key=lambda dcm: dcm.InstanceNumber)]
+    #slices = [dcm.pixel_array for dcm in sorted(dcmlist, key=lambda dcm: dcm.InstanceNumber)]
 
     # Make sure that you have correctly constructed the volume from your axial slices!
     hdr = dcmlist[0]
@@ -51,40 +51,36 @@ def load_dicom_volume_as_numpy_from_list(dcmlist):
     # We also zero-out Pixel Data since the users of this function are only interested in metadata
     hdr.PixelData = None
     return (np.stack(slices, 2), hdr)
+    #return (np.stack(slices, 0), hdr)
 
+compute_volume_1 = lambda x: 1 if x == 1 else 0
+compute_volume_2 = lambda x: 1 if x == 2 else 0
+v_compute_volume_1 = np.vectorize(compute_volume_1)
+v_compute_volume_2 = np.vectorize(compute_volume_2)
+    
 def get_predicted_volumes(pred):
     """Gets volumes of two hippocampal structures from the predicted array
-
     Arguments:
         pred {Numpy array} -- array with labels. Assuming 0 is bg, 1 is anterior, 2 is posterior
-
     Returns:
         A dictionary with respective volumes
     """
 
     # TASK: Compute the volume of your hippocampal prediction
     # <YOUR CODE HERE>
-    volume_ant=0
-    volume_post=0
-    for i in range(pred.shape[0]):
-        for j in range(pred.shape[1]):
-            for k in range(pred.shape[2]):
-                if pred[i][j][k] ==1: # anything other than blakc pixel",
-                    volume_ant+=1
-                elif pred[i][j][k] ==2:
-                    volume_post+=1
-    total_volume=volume_ant+volume_post
+    volume_ant = np.sum(v_compute_volume_1(pred))
+    volume_post = np.sum(v_compute_volume_2(pred))
+    total_volume = volume_ant + volume_post
+
     return {"anterior": volume_ant, "posterior": volume_post, "total": total_volume}
 
 def create_report(inference, header, orig_vol, pred_vol):
     """Generates an image with inference report
-
     Arguments:
         inference {Dictionary} -- dict containing anterior, posterior and full volume values
         header {PyDicom Dataset} -- DICOM header
         orig_vol {Numpy array} -- original volume
         pred_vol {Numpy array} -- predicted label
-
     Returns:
         PIL image
     """
@@ -98,10 +94,10 @@ def create_report(inference, header, orig_vol, pred_vol):
     pimg = Image.new("RGB", (1000, 1000))
     draw = ImageDraw.Draw(pimg)
 
-    header_font = ImageFont.truetype("assets/Roboto-Regular.ttf", size=40)
-    main_font = ImageFont.truetype("assets/Roboto-Regular.ttf", size=20)
-
-    slice_nums = [orig_vol.shape[2]//3, orig_vol.shape[2]//2, orig_vol.shape[2]*3//4] # is there a better choice?
+    header_font = ImageFont.truetype("assets/Roboto-Regular.ttf", 40)
+    main_font = ImageFont.truetype("assets/Roboto-Regular.ttf", 20)
+    
+    #slice_nums = [orig_vol.shape[2]//3, orig_vol.shape[2]//2, orig_vol.shape[2]*3//4] # is there a better choice?
 
     # TASK: Create the report here and show information that you think would be relevant to
     # clinicians. A sample code is provided below, but feel free to use your creative 
@@ -110,22 +106,11 @@ def create_report(inference, header, orig_vol, pred_vol):
     # depend on how you present them.
 
     # SAMPLE CODE BELOW: UNCOMMENT AND CUSTOMIZE
-    multi_factor = header.SliceThickness * header.PixelSpacing[0] * header.PixelSpacing[1]
-    ant_vol=inference['anterior']*multi_factor
-    post_vol=inference['posterior']*multi_factor
-    tot_vol=ant_vol+post_vol
-    draw.text((10, 0), "HippoVolume.AI", (255, 255, 255), font=header_font)
-    text = textwrap.dedent(f"""\
-    Patient ID: {header.PatientID}\n
-	Modality:{header.Modality}\n
-    Series Descr. :{header.SeriesDescription}\n
-	Study Descr. :{header.StudyDescription}\n
-    Anterior Volume={ant_vol}\n
-    Posterior Volume={post_vol}\n
-    Total Volume={tot_vol}""")
-    draw.multiline_text((200, 0),
-						  text,
-                         (255, 255, 255), font=main_font)
+    # draw.text((10, 0), "HippoVolume.AI", (255, 255, 255), font=header_font)
+    # draw.multiline_text((10, 90),
+    #                     f"Patient ID: {header.PatientID}\n"
+    #                       <WHAT OTHER INFORMATION WOULD BE RELEVANT?>
+    #                     (255, 255, 255), font=main_font)
 
     # STAND-OUT SUGGESTION:
     # In addition to text data in the snippet above, can you show some images?
@@ -139,17 +124,94 @@ def create_report(inference, header, orig_vol, pred_vol):
     # pil_i = Image.fromarray(nd_img, mode="L").convert("RGBA").resize(<dimensions>)
     # Paste the PIL image into our main report image object (pimg)
     # pimg.paste(pil_i, box=(10, 280))
+    
+    def get_image(slice_index):
+        slice = orig_vol[slice_index, :, :]
+        slice = ((slice/np.max(slice))*0xff).astype(np.uint8)
+        #slice = np.flip((slice/np.max(slice))*0xff).T.astype(np.uint8)
+        return Image.fromarray(slice, mode='L').convert("RGBA")
+    
+    def get_mask(slice_index, mask_number):
+        slice = pred_vol[slice_index, :, :]
+        slice = v_compute_volume_1(slice) if mask_number == 1 else v_compute_volume_2(slice)
+        #slice = np.flip(slice * 0xff).T.astype(np.uint8)
+        slice = (slice * 0xff).astype(np.uint8)
+        return Image.fromarray(slice, mode='L')
+    
+    def get_overlay(mask_size, mask1, mask2):
+        overlay = Image.new('RGBA', mask_size, (255, 255, 255, 0))
+        drawing = ImageDraw.Draw(overlay)
+        drawing.bitmap((0, 0), mask1, fill=(255, 0, 0, 128))
+        drawing.bitmap((0, 0), mask2, fill=(0, 255, 0, 128))
+        return overlay
+    
+    def get_slice_thumbnail(slice_index, new_size):
+        image = get_image(slice_index)
+        mask1 = get_mask(slice_index, 1)
+        mask2 = get_mask(slice_index, 2)        
+        overlay = get_overlay(mask1.size, mask1, mask2)
+        print('image:', image.size, image)
+        print('overlay:', overlay.size, overlay)
+        thumbnail = Image.alpha_composite(image, overlay)
+        thumbnail = thumbnail.resize(new_size)
+        return thumbnail
+    
+    n_slices = orig_vol.shape[0]
+    #orig_vol = np.flip(orig_vol, 0)
+    #orig_vol = np.flip(orig_vol, 1)
+    orig_vol = med_reshape(orig_vol, (n_slices, 64, 64))
+    
+    side = 200
+    new_size = (side, side)
+    range1 = range(0, 1000 - 1, side)
+    n_thumbnails = 0
+    for y in range1:
+        for x in range1:
+            n_thumbnails += 1
+            
+    black = (0, 0, 0)
+    white = (255, 255, 255)
+    
+    slice_step = 1. * n_slices / n_thumbnails
+    slice_index = 0
+    for y in range1:
+        for x in range1:
+            slice_index += slice_step
+            int_slice_index = int(np.round(slice_index))
+            if int_slice_index >= n_slices: continue
+            print(f'Thumbnail of slice_index={int_slice_index} of {n_slices - 1} ({slice_index:.2f})')
+            pimg.paste(get_slice_thumbnail(int_slice_index, new_size), box=(x, y))
+            slice_string = f'{int_slice_index}'
+            offset = 25
+            draw.text((x + side - offset + 1, y + side - offset + 1), slice_string, black, font=main_font)
+            draw.text((x + side - offset, y + side - offset), slice_string, white, font=main_font)
+            
 
+    title = "HippoVolume.AI"
+    draw.text((11, 1), title, black, font=header_font)
+    draw.text((10, 0), title, white, font=header_font)
+    global date_and_time
+    volume_factor = header.SliceThickness * header.PixelSpacing[0] * header.PixelSpacing[1]
+    print(f'volume_factor={volume_factor}')
+    anterior_volume = inference['anterior'] * volume_factor
+    posterior_volume = inference['posterior'] * volume_factor
+    total_volume = inference['total'] * volume_factor
+    long_text = (f'Patient ID: {header.PatientID}\n'
+                 f'Time: {date_and_time}\n'
+                 f"Anterior volume: {anterior_volume},  posterior volume: {posterior_volume}, total volume: {total_volume}\n")
+    draw.multiline_text((11, 91), long_text, black, font = main_font)
+    draw.multiline_text((10, 90), long_text, white, font = main_font)
+    shape = [(0, 0), (1000 - 1, 1000 - 1)] 
+    draw.rectangle(shape, outline ="red")
+            
     return pimg
 
 def save_report_as_dcm(header, report, path):
     """Writes the supplied image as a DICOM Secondary Capture file
-
     Arguments:
         header {PyDicom Dataset} -- original DICOM file header
         report {PIL image} -- image representing the report
         path {Where to save the report}
-
     Returns:
         N/A
     """
@@ -176,7 +238,6 @@ def save_report_as_dcm(header, report, path):
     # Note that we are building an RGB image which would have three 8-bit samples per pixel
     # Also note that writing code that generates valid DICOM has a very calming effect
     # on mind and body :)
-
     out.is_little_endian = True
     out.is_implicit_VR = False
 
@@ -189,7 +250,8 @@ def save_report_as_dcm(header, report, path):
     out.SOPInstanceUID = pydicom.uid.generate_uid()
     out.file_meta.MediaStorageSOPInstanceUID = out.SOPInstanceUID
     out.Modality = "OT" # Other
-    out.SeriesDescription = "HippoVolume.AI"
+    global date_and_time
+    out.SeriesDescription = f"HippoVolume.AI ({date_and_time})"
 
     out.Rows = report.height
     out.Columns = report.width
@@ -227,10 +289,8 @@ def save_report_as_dcm(header, report, path):
 def get_series_for_inference(path):
     """Reads multiple series from one folder and picks the one
     to run inference on.
-
     Arguments:
         path {string} -- location of the DICOM files
-
     Returns:
         Numpy array representing the series
     """
@@ -252,10 +312,18 @@ def get_series_for_inference(path):
     # Hint: inspect the metadata of HippoCrop series
 
     # <YOUR CODE HERE>
-    series_for_inference=[]
+    
+    def is_dicom_valid(i, dicom):
+        print(f'i={i}, rows={dicom.Rows}, columns={dicom.Columns}, dicom.SeriesDescription={dicom.SeriesDescription}, dicom.PixelSpacing={dicom.PixelSpacing}, dicom.SliceThickness={dicom.SliceThickness}')
+        return dicom.SeriesDescription == "HippoCrop"
+    
+    series_for_inference = []
+    i = 0
     for dicom in dicoms:
-        if dicom.SeriesDescription=="HippoCrop":
+        i += 1
+        if is_dicom_valid(i, dicom):
             series_for_inference.append(dicom)
+
     # Check if there are more than one series (using set comprehension).
     if len({f.SeriesInstanceUID for f in series_for_inference}) != 1:
         print("Error: can not figure out what series to run inference on")
@@ -269,16 +337,16 @@ def os_command(command):
     sp.communicate()
 
     # Uncomment this if running under Windows
-    #os.system(command)
-def get_study_dir(subdirs):
-    seriesname=[]
+    # os.system(command)
+    
+def select_study_dir(subdirs):
     for path in subdirs:
         dicoms = [pydicom.dcmread(os.path.join(path, f)) for f in os.listdir(path)]
         for dicom in dicoms:
-            seriesname.append(dicom.SeriesDescription)
             if dicom.SeriesDescription == "HippoCrop": return path
-        print("Unique Series description"+str(np.unique(seriesname)))
     return None
+    
+
 if __name__ == "__main__":
     # This code expects a single command line argument with link to the directory containing
     # routed studies
@@ -293,7 +361,8 @@ if __name__ == "__main__":
 
     # Get the latest directory
     #study_dir = sorted(subdirs, key=lambda dir: os.stat(dir).st_mtime, reverse=True)[0]
-    study_dir=get_study_dir(subdirs)
+    study_dir = select_study_dir(subdirs)
+
     print(f"Looking for series to run inference on in directory {study_dir}...")
 
     # TASK: get_series_for_inference is not complete. Go and complete it
@@ -304,13 +373,13 @@ if __name__ == "__main__":
     # TASK: Use the UNetInferenceAgent class and model parameter file from the previous section
     inference_agent = UNetInferenceAgent(
         device="cpu",
-        parameter_file_path=r"Model/model.pth")
+        parameter_file_path=r"../model.pth")
 
     # Run inference
     # TASK: single_volume_inference_unpadded takes a volume of arbitrary size 
     # and reshapes y and z dimensions to the patch size used by the model before 
     # running inference. Your job is to implement it.
-    pred_label = inference_agent.single_volume_inference(np.array(volume))
+    pred_label = inference_agent.single_volume_inference_unpadded(np.array(volume))
     # TASK: get_predicted_volumes is not complete. Go and complete it
     pred_volumes = get_predicted_volumes(pred_label)
 
@@ -326,6 +395,8 @@ if __name__ == "__main__":
     # Send report to our storage archive
     # TASK: Write a command line string that will issue a DICOM C-STORE request to send our report
     # to our Orthanc server (that runs on port 4242 of the local machine), using storescu tool
+    
+    #command_storescu = f'sudo storescu 127.0.0.1 4242 -v -aec HIPPOAI +r +sd '
     command_storescu = f'storescu 127.0.0.1 4242 -v -aec HIPPOAI +r +sd  {report_save_path}'
     os_command(command_storescu)
 

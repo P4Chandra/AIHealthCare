@@ -6,7 +6,6 @@ import numpy as np
 
 from networks.RecursiveUNet import UNet
 
-from utils.utils import med_reshape
 
 class UNetInferenceAgent:
     """
@@ -40,7 +39,7 @@ class UNetInferenceAgent:
         
         raise NotImplementedError
 
-    def single_volume_inference(self, volume):
+    def single_volume_inference(self, image):
         """
         Runs inference on a single volume of conformant patch size
 
@@ -51,14 +50,26 @@ class UNetInferenceAgent:
             3D NumPy array with prediction mask
         """
         self.model.eval()
-
+        #reshape the Image
+        volume=self.med_reshape(image)
         # Assuming volume is a numpy array of shape [X,Y,Z] and we need to slice X axis
-        slices = []
-
+        slices = np.zeros(volume.shape)
         # TASK: Write code that will create mask for each slice across the X (0th) dimension. After 
         # that, put all slices into a 3D Numpy array. You can verify if your method is 
         # correct by running it on one of the volumes in your training set and comparing 
         # with the label in 3D Slicer.
         # <YOUR CODE HERE>
 
-        return # 
+        for sliceidx in range(volume.shape[0]):
+            slc = volume[sliceidx,:,:].astype(np.single)/np.max(volume[sliceidx,:,:])
+            slc_tensor=torch.from_numpy(slc).unsqueeze(0).unsqueeze(0).to(self.device)
+            pred=self.model(slc_tensor)
+            pred=np.squeeze(pred.cpu().detach())
+            slices[sliceidx,:,:]=torch.argmax(pred,dim=0)
+        
+        return slices # 
+    
+    def med_reshape(self,image):
+        reshaped_image = np.zeros((image.shape[0],self.patch_size,self.patch_size))
+        reshaped_image[0:image.shape[0], 0:image.shape[1],0:image.shape[2]] = image
+        return reshaped_image
